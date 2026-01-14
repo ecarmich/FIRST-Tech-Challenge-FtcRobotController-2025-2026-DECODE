@@ -21,7 +21,7 @@ apply plugin: 'com.android.application'
 
 android {
 
-    compileSdkVersion 30
+    compileSdkVersion 36
 
     signingConfigs {
         release {
@@ -48,7 +48,7 @@ android {
     }
 
     defaultConfig {
-        signingConfig signingConfigs.debug
+        signingConfig = signingConfigs.debug
         applicationId 'com.qualcomm.ftcrobotcontroller'
         minSdkVersion 24
         //noinspection ExpiredTargetSdkVersion
@@ -66,7 +66,7 @@ android {
          * @see <a href="http://developer.android.com/tools/building/configuring-gradle.html">Configure Your Build</a>
          * @see <a href="http://developer.android.com/tools/publishing/versioning.html">Versioning Your App</a>
          */
-        def manifestFile = project(':FtcRobotController').file('src/main/AndroidManifest.xml');
+        def manifestFile = project(':FtcRobotController').file('src/main/AndroidManifest.xml')
         def manifestText = manifestFile.getText()
         //
         def vCodePattern = Pattern.compile("versionCode=\"(\\d+(\\.\\d+)*)\"")
@@ -75,7 +75,7 @@ android {
         def vCode = Integer.parseInt(matcher.group(1))
         //
         def vNamePattern = Pattern.compile("versionName=\"(.*)\"")
-        matcher = vNamePattern.matcher(manifestText);
+        matcher = vNamePattern.matcher(manifestText)
         matcher.find()
         def vName = matcher.group(1)
         //
@@ -86,9 +86,10 @@ android {
     // http://google.github.io/android-gradle-dsl/current/com.android.build.gradle.internal.dsl.BuildType.html
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            signingConfig = signingConfigs.release
 
             ndk {
+                //noinspection ChromeOsAbiSupport
                 abiFilters "armeabi-v7a", "arm64-v8a"
             }
         }
@@ -96,17 +97,24 @@ android {
             debuggable true
             jniDebuggable true
             ndk {
+                //noinspection ChromeOsAbiSupport
                 abiFilters "armeabi-v7a", "arm64-v8a"
             }
         }
     }
 
     compileOptions {
+        /**
+         * These lead to
+         * "Java compiler version 21 has deprecated support for compiling with source/target version 8"
+         * warnings, but FIRST Tech Challenge requires Java 1.8, per
+         * https://github.com/FIRST-Tech-Challenge/FtcRobotController/blob/master/README.md#known-issues-1
+         */
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
-    ndkVersion '21.3.6528147'
+    ndkVersion = '21.3.6528147'
 }
 
 repositories {

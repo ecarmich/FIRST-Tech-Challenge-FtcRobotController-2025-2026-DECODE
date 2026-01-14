@@ -22,7 +22,7 @@ android {
         jniLibs {
             pickFirsts += ['**/*.so']
         }
-        jniLibs.useLegacyPackaging true
+        jniLibs.useLegacyPackaging = true
     }
 }
 
