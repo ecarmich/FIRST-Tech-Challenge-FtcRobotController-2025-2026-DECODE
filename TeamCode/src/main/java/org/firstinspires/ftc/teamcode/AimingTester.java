@@ -1,12 +1,12 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.acmerobotics.roadrunner.ftc.LazyHardwareMapImu;
-import com.acmerobotics.roadrunner.ftc.LazyImu;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
+import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
@@ -27,8 +27,7 @@ public class AimingTester extends OpMode {
     private DcMotorEx rightFront = null;
     private DcMotorEx leftBack = null;
     private DcMotorEx rightBack = null;
-    private LazyImu lazyImu;
-    private double power = 0.0;
+    private IMU imu;
 
     /*
      * Each press of the D-pad should change the power by one increment. This tracks whether we
@@ -39,6 +38,15 @@ public class AimingTester extends OpMode {
     private long lastElapsedTimeNanoSeconds;
 
     private int numLoopCalls = 0;
+
+    private double targetHeadingDegrees = 0;
+
+    private boolean moveToTargetHeading = false;
+
+    // kp = .01: oscillation
+    // kP = .005: no oscillation, stops 12 degrees short
+    // .001 < kI < .1
+    private final PIDController pidController = new PIDController(.008,.01,0.001, telemetry);
 
     /*
      * Code to run ONCE when the driver hits INIT
@@ -54,8 +62,9 @@ public class AimingTester extends OpMode {
         rightBack = hardwareMap.get(DcMotorEx.class, "rightBack");
         rightBack.setDirection(DcMotorSimple.Direction.REVERSE);
 
-        lazyImu = new LazyHardwareMapImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
-                logoFacingDirection, usbFacingDirection));
+        imu = new LazyHardwareMapImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
+                logoFacingDirection, usbFacingDirection)).get();
+        imu.resetYaw();
 
         // Tell the driver that initialization is complete.
         telemetry.addData("Status", "Initialized");
@@ -89,37 +98,33 @@ public class AimingTester extends OpMode {
      */
     @Override
     public void loop() {
-        if (dPadPressed) {
-            // We previously registered a button press
-            if (!gamepad1.dpad_up && !gamepad1.dpad_down && !gamepad1.dpad_left && !gamepad1.dpad_right) {
-                // None of the D-pad buttons are currently being pressed, so reset dPadPressed so that the next button press will register
-                dPadPressed = false;
+        // Read sensors
+        updateTargetHeading();
+        double robotHeadingDegrees = imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
+        double degreesToTurnToReachTarget = normalizeAngleInDegrees(targetHeadingDegrees - robotHeadingDegrees);
+        double power;
+        if (gamepad1.x) {
+            if (!moveToTargetHeading) {
+                pidController.reset(runtime.nanoseconds());
+                //pidController.setSetpoint(targetHeadingDegrees);
+                moveToTargetHeading = true;
             }
-            // Exit without updating the power
-            return;
+
+            // Move
+            power = pidController.calculate(-degreesToTurnToReachTarget, runtime.nanoseconds());
+        } else {
+            moveToTargetHeading = false;
+            power = 0;
         }
-        if (gamepad1.dpad_up) {
-            dPadPressed = true;
-            power += 0.1;
+        telemetry.addData("Degrees to turn to reach target heading (degrees)", "%f", degreesToTurnToReachTarget);
+        /*
+        if (moveToTargetHeading) {
+            power = degreesToTurnToReachTarget / 180;
+        } else {
+            power = 0;
         }
-        if (gamepad1.dpad_down) {
-            dPadPressed = true;
-            power -= 0.1;
-        }
-        if (gamepad1.dpad_left) {
-            dPadPressed = true;
-            power += 0.01;
-        }
-        if (gamepad1.dpad_right) {
-            dPadPressed = true;
-            power -= 0.01;
-        }
-        if (power > 1.0) {
-            power = 1;
-        }
-        if (power < -1) {
-            power = -1;
-        }
+        */
+        telemetry.addData("Power", power);
         rotateCounterClockwise(power);
 
         // Display motor performance statistics
@@ -127,17 +132,57 @@ public class AimingTester extends OpMode {
         telemetry.addData("Power", power);
         telemetry.addData("Velocity", leftFront.getVelocity());
         telemetry.addData("Current", leftFront.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
-        telemetry.addData("Yaw", "%.4f (%.4f degrees)", lazyImu.get().getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS),
-                lazyImu.get().getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES));
-        telemetry.addData("Pitch", "%.4f (%.4f degrees)", lazyImu.get().getRobotYawPitchRollAngles().getPitch(AngleUnit.RADIANS)
-                , lazyImu.get().getRobotYawPitchRollAngles().getPitch(AngleUnit.DEGREES));
-        telemetry.addData("Roll", "%.4f (%.4f degrees)", lazyImu.get().getRobotYawPitchRollAngles().getRoll(AngleUnit.RADIANS)
-                , lazyImu.get().getRobotYawPitchRollAngles().getRoll(AngleUnit.DEGREES));
+        telemetry.addData("Yaw", "%.4f (%.4f degrees)", imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS),
+                imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES));
+        telemetry.addData("Pitch", "%.4f (%.4f degrees)", imu.getRobotYawPitchRollAngles().getPitch(AngleUnit.RADIANS)
+                , imu.getRobotYawPitchRollAngles().getPitch(AngleUnit.DEGREES));
+        telemetry.addData("Roll", "%.4f (%.4f degrees)", imu.getRobotYawPitchRollAngles().getRoll(AngleUnit.RADIANS)
+                , imu.getRobotYawPitchRollAngles().getRoll(AngleUnit.DEGREES));
         telemetry.addData("Number of calls to loop()", "%,d", numLoopCalls);
         telemetry.addData("Time since last call to loop()", "%,d", runtime.nanoseconds() - lastElapsedTimeNanoSeconds);
+        telemetry.addData("Target heading (degrees)", "%f", targetHeadingDegrees);
         lastElapsedTimeNanoSeconds = runtime.nanoseconds();
         numLoopCalls++;
         telemetry.addData("Avg nanoseconds between loop() calls", "%,d", runtime.nanoseconds() / numLoopCalls);
+    }
+
+    private void updateTargetHeading() {
+        if (dPadPressed) {
+            // We previously registered a button press
+            if (!gamepad1.dpad_up && !gamepad1.dpad_down && !gamepad1.dpad_left && !gamepad1.dpad_right) {
+                // None of the D-pad buttons are currently being pressed, so reset dPadPressed so that the next button press will register
+                dPadPressed = false;
+            }
+            // Exit without updating the target heading
+            return;
+        }
+        if (gamepad1.dpad_up) {
+            dPadPressed = true;
+            targetHeadingDegrees += 10;
+        }
+        if (gamepad1.dpad_down) {
+            dPadPressed = true;
+            targetHeadingDegrees -= 10;
+        }
+        if (gamepad1.dpad_left) {
+            dPadPressed = true;
+            targetHeadingDegrees += 1;
+        }
+        if (gamepad1.dpad_right) {
+            dPadPressed = true;
+            targetHeadingDegrees -= 1;
+        }
+        targetHeadingDegrees = normalizeAngleInDegrees(targetHeadingDegrees);
+    }
+
+    private double normalizeAngleInDegrees(double degrees) {
+        while (degrees <= -180) {
+            degrees += 360;
+        }
+        while (degrees > 180) {
+            degrees -= 360;
+        }
+        return degrees;
     }
 
     /*
