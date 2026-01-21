@@ -9,7 +9,7 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
 
 @TeleOp
-public class WheelFrictionTester extends OpMode {
+public class WheelVelocityTester extends OpMode {
     // Declare OpMode members.
     private final ElapsedTime runtime = new ElapsedTime();
 
@@ -18,10 +18,10 @@ public class WheelFrictionTester extends OpMode {
     private DcMotorEx leftBack = null;
     private DcMotorEx rightBack = null;
 
-    private double power = 0.0;
+    private double velocity = 0.0;
 
     /*
-     * Each press of the D-pad should change the power by one increment. This tracks whether we
+     * Each press of the D-pad should change the velocity by one increment. This tracks whether we
      * already registered this button press.
      */
     private boolean dPadPressed = false;
@@ -43,7 +43,7 @@ public class WheelFrictionTester extends OpMode {
         // Tell the driver that initialization is complete.
         telemetry.addData("Status", "Initialized");
         telemetry.addData("Instructions", "Use the D-pad (Directional Pad)"
-                + " to change the power:\n"
+                + " to change the velocity:\n"
                 + "  Up: add 0.1\n"
                 + "  Down: subtract 0.1\n"
                 + "  Left: add 0.01\n"
@@ -77,47 +77,59 @@ public class WheelFrictionTester extends OpMode {
                 // None of the D-pad buttons are currently being pressed, so reset dPadPressed so that the next button press will register
                 dPadPressed = false;
             }
-            // Exit without updating the power
+            // Exit without updating the velocity
             return;
         }
         if (gamepad1.dpad_up) {
             dPadPressed = true;
-            power += 0.1;
+            velocity += 100;
         }
         if (gamepad1.dpad_down) {
             dPadPressed = true;
-            power -= 0.1;
+            velocity -= 100;
         }
         if (gamepad1.dpad_left) {
             dPadPressed = true;
-            power += 0.01;
+            velocity += 10;
         }
         if (gamepad1.dpad_right) {
             dPadPressed = true;
-            power -= 0.01;
+            velocity -= 10;
         }
-        if (power > 1.0) {
-            power = 1;
+        if (velocity > 3000) {
+            velocity = 3000;
         }
-        if (power < -1) {
-            power = -1;
+        if (velocity < -3000) {
+            velocity = -3000;
         }
-        leftFront.setPower(power);
-        rightFront.setPower(power);
-        leftBack.setPower(power);
-        rightBack.setPower(power);
+        if (gamepad1.y) {
+            velocity = 1500;
+        } else if (gamepad1.a) {
+            velocity = -1500;
+        }
+        leftFront.setVelocity(velocity);
+        rightFront.setVelocity(velocity);
+        leftBack.setVelocity(velocity);
+        rightBack.setVelocity(velocity);
 
         // Display motor performance statistics
         telemetry.addData("Status", "Run Time: " + runtime);
-        telemetry.addData("Power", power);
-        telemetry.addData("Left Front Velocity", leftFront.getVelocity());
-        telemetry.addData("Left Front Current", leftFront.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
+        telemetry.addData("Velocity", velocity);
+
+        telemetry.addData("Left Front Velocity ", leftFront.getVelocity());
         telemetry.addData("Right Front Velocity", rightFront.getVelocity());
+        telemetry.addData("Left Back Velocity  ", leftBack.getVelocity());
+        telemetry.addData("Right Back Velocity ", rightBack.getVelocity());
+
+        telemetry.addData("Left Front Power ", leftFront.getPower());
+        telemetry.addData("Right Front Power", rightFront.getPower());
+        telemetry.addData("Left Back Power  ", leftBack.getPower());
+        telemetry.addData("Right Back Power ", rightBack.getPower());
+
+        telemetry.addData("Left Front Current ", leftFront.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
         telemetry.addData("Right Front Current", rightFront.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
-        telemetry.addData("Left Back Velocity", leftBack.getVelocity());
-        telemetry.addData("Left Back Current", leftBack.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
-        telemetry.addData("Right Back Velocity", rightBack.getVelocity());
-        telemetry.addData("Right Back Current", rightBack.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
+        telemetry.addData("Left Back Current  ", leftBack.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
+        telemetry.addData("Right Back Current ", rightBack.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
     }
 
     /*

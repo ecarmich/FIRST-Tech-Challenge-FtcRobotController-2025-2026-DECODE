@@ -3,20 +3,16 @@ package org.firstinspires.ftc.teamcode;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
 
 @TeleOp
-public class WheelFrictionTester extends OpMode {
+public class FlywheelVelocityTester extends OpMode {
     // Declare OpMode members.
     private final ElapsedTime runtime = new ElapsedTime();
 
-    private DcMotorEx leftFront = null;
-    private DcMotorEx rightFront = null;
-    private DcMotorEx leftBack = null;
-    private DcMotorEx rightBack = null;
+    private DcMotorEx flywheel = null;
 
     private double power = 0.0;
 
@@ -33,12 +29,7 @@ public class WheelFrictionTester extends OpMode {
     public void init() {
         telemetry.addData("Status", "Initializing");
 
-        leftFront = hardwareMap.get(DcMotorEx.class, "leftFront");
-        rightFront = hardwareMap.get(DcMotorEx.class, "rightFront");
-        rightFront.setDirection(DcMotorSimple.Direction.REVERSE);
-        leftBack = hardwareMap.get(DcMotorEx.class, "leftBack");
-        rightBack = hardwareMap.get(DcMotorEx.class, "rightBack");
-        rightBack.setDirection(DcMotorSimple.Direction.REVERSE);
+        flywheel = hardwareMap.get(DcMotorEx.class, "flywheel");
 
         // Tell the driver that initialization is complete.
         telemetry.addData("Status", "Initialized");
@@ -102,22 +93,13 @@ public class WheelFrictionTester extends OpMode {
         if (power < -1) {
             power = -1;
         }
-        leftFront.setPower(power);
-        rightFront.setPower(power);
-        leftBack.setPower(power);
-        rightBack.setPower(power);
+        flywheel.setPower(power);
 
         // Display motor performance statistics
         telemetry.addData("Status", "Run Time: " + runtime);
         telemetry.addData("Power", power);
-        telemetry.addData("Left Front Velocity", leftFront.getVelocity());
-        telemetry.addData("Left Front Current", leftFront.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
-        telemetry.addData("Right Front Velocity", rightFront.getVelocity());
-        telemetry.addData("Right Front Current", rightFront.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
-        telemetry.addData("Left Back Velocity", leftBack.getVelocity());
-        telemetry.addData("Left Back Current", leftBack.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
-        telemetry.addData("Right Back Velocity", rightBack.getVelocity());
-        telemetry.addData("Right Back Current", rightBack.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
+        telemetry.addData("Left Front Velocity", flywheel.getVelocity());
+        telemetry.addData("Left Front Current", flywheel.getCurrent(CurrentUnit.MILLIAMPS) + " milliamps");
     }
 
     /*

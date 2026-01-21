@@ -28,6 +28,9 @@ android {
 
 dependencies {
     implementation project(':FtcRobotController')
+    // Apache Commons Math 3.x
+    implementation 'org.apache.commons:commons-math3:3.6.1'
+
     testImplementation 'org.junit.jupiter:junit-jupiter-api:6.0.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:6.0.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
