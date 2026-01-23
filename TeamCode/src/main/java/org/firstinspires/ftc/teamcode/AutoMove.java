@@ -1,7 +1,6 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.hardware.limelightvision.LLResult;
-import com.qualcomm.hardware.limelightvision.LLResultTypes;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -13,12 +12,9 @@ import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
-import java.util.List;
-
 @TeleOp
 public class AutoMove extends OpMode {
 
-    private static final int LIMELIGHT_PIPELINE_INDEX = 4;
     // From https://ftc-docs.firstinspires.org/en/latest/programming_resources/imu/imu.html:
     // "Heading, or Yaw, is the measure of rotation about the Z axis, which points up toward the
     // ceiling."
@@ -43,17 +39,30 @@ public class AutoMove extends OpMode {
     // touching it).
     private static final double INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES = 126;
 
+    private static final int LIMELIGHT_PIPELINE_INDEX = 4;
+
     private final ElapsedTime runtime = new ElapsedTime();
     private final int goalAprilTagId;
-    private IMU imu;
-    private Limelight3A limelight;
-
-    private MecanumDrive mecanumDrive;
-
     VariablePeriodPIDController xPid;
     VariablePeriodPIDController yPid;
     VariablePeriodPIDController thetaPid;
     long lastTime;
+    private IMU imu;
+    private Limelight3A limelight;
+
+    private Angle imuYaw;
+    private double pinpointXMeters;
+    private double pinpointYMeters;
+    private double pinpointYawRadians;
+    private final PinpointDriftKalmanFilter filterDriftX = new PinpointDriftKalmanFilter(0.1, 0.1);
+    private final PinpointDriftKalmanFilter filterDriftY = new PinpointDriftKalmanFilter(0.1, 0.1);
+    private final PinpointDriftKalmanFilter filterDriftTheta = new PinpointDriftKalmanFilter(0.1, 0.1);
+    private double estimatedDriftX;
+    private double estimatedDriftY;
+    private double estimatedDriftTheta;
+    private MecanumDrive mecanumDrive;
+
+    private long lastLimelightReadNanoseconds;
 
     public AutoMove() {
         goalAprilTagId = 24;
@@ -66,7 +75,20 @@ public class AutoMove extends OpMode {
     public void init() {
         telemetry.addData("Status", "Initializing");
 
-        // Initialize the IMU
+        initializeImu();
+
+        initializeLimelight();
+
+        // initializePinpoint();
+
+        // Initialize the motors
+        mecanumDrive = new MecanumDrive(hardwareMap, telemetry);
+
+        // Tell the driver that initialization is complete.
+        telemetry.addData("Status", "Initialized");
+    }
+
+    private void initializeImu() {
         imu = hardwareMap.get(IMU.class, "imu");
         // See https://ftc-docs.firstinspires.org/en/latest/programming_resources/imu/imu.html
         // On this robot, the control hub is mounted with the logo facing up and the USB ports
@@ -79,17 +101,14 @@ public class AutoMove extends OpMode {
                 imu.initialize(new IMU.Parameters(revHubOrientationOnRobot));
         imu.resetYaw();
         telemetry.addData("IMU initialized successfully", imuInitializationSucceeded);
+    }
 
+    private void initializeLimelight() {
         // Initialize the Limelight
         limelight = hardwareMap.get(Limelight3A.class, "limelight");
         limelight.pipelineSwitch(LIMELIGHT_PIPELINE_INDEX);
         limelight.start();
-
-        // Initialize the motors
-        mecanumDrive = new MecanumDrive(hardwareMap, telemetry);
-
-        // Tell the driver that initialization is complete.
-        telemetry.addData("Status", "Initialized");
+        telemetry.addLine("Limelight initialized. Pipeline index = " + LIMELIGHT_PIPELINE_INDEX);
     }
 
     /*
@@ -113,123 +132,117 @@ public class AutoMove extends OpMode {
      */
     @Override
     public void loop() {
+        readImu();
+        // readPinpoint();
+        // Must follow call to readImu() because it uses the yaw reported by the IMU.
+        readLimelight();
+
+        move();
+    }
+
+    private void readImu() {
+        imuYaw = Angle.fromRadians(imu.getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS));
         YawPitchRollAngles robotYawPitchRollRelativeToStart = imu.getRobotYawPitchRollAngles();
         double robotYawRelativeToStartInDegrees =
                 robotYawPitchRollRelativeToStart.getYaw(AngleUnit.DEGREES);
         telemetry.addData("Yaw reported by IMU", robotYawRelativeToStartInDegrees);
         telemetry.addData("IMU Yaw relative to field",
-                          INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
+                INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
         telemetry.addData("Pitch reported by IMU",
-                          robotYawPitchRollRelativeToStart.getPitch(AngleUnit.DEGREES));
+                robotYawPitchRollRelativeToStart.getPitch(AngleUnit.DEGREES));
         telemetry.addData("Roll reported by IMU",
-                          robotYawPitchRollRelativeToStart.getRoll(AngleUnit.DEGREES));
+                robotYawPitchRollRelativeToStart.getRoll(AngleUnit.DEGREES));
         telemetry.addLine("initialRobotYawRelativeToFieldInDegrees " + INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES);
         telemetry.addLine("Setting Limelight robot orientation to " + INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
-        limelight.updateRobotOrientation(INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
+    }
+
+    private boolean readLimelight() {
+        long currentTimeNanoseconds = runtime.nanoseconds();
+        long timeSinceLastLimelightReadNanoseconds = currentTimeNanoseconds - lastLimelightReadNanoseconds;
+
+        limelight.updateRobotOrientation(INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + imuYaw.degrees);
         LLResult llResult = limelight.getLatestResult();
-        boolean isValid = false;
-        if (llResult != null && llResult.isValid()) {
-            isValid = true;
-            if (llResult.getPipelineIndex() != LIMELIGHT_PIPELINE_INDEX) {
-                telemetry.addData("Error", "Pipeline index: expected %d, got %d",
-                                  LIMELIGHT_PIPELINE_INDEX, llResult.getPipelineIndex());
-                return;
+        if (llResult == null || !llResult.isValid() || llResult.getPipelineIndex() != LIMELIGHT_PIPELINE_INDEX) {
+            return false;
+        }
+
+        // Distances are in meters, rotations are in degrees. This is centered on the origin.
+        // Zero yaw points along the x axis (i.e., towards the audience). Positive yaw indicates
+        // counterclockwise rotation from the point of view of someone looking down on the field
+        // (i.e., same as the unit circle).
+        Pose3D botPose = llResult.getBotpose_MT2();
+        telemetry.addData("BotPose", botPose.toString());
+
+        double limelightXMeters = botPose.getPosition().x;
+        filterDriftX.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointXMeters, limelightXMeters, llResult.getStddevMt2()[0]);
+        estimatedDriftX =  filterDriftX.getEstimatedDrift();
+        telemetry.addData("estimatedDriftX", estimatedDriftX);
+        double limelightYMeters = botPose.getPosition().y;
+        filterDriftY.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointYMeters, limelightYMeters, llResult.getStddevMt2()[1]);
+        estimatedDriftY = filterDriftY.getEstimatedDrift();
+        telemetry.addData("estimatedDriftY", estimatedDriftY);
+        double limelightYawRadians = botPose.getOrientation().getYaw(AngleUnit.RADIANS);
+        filterDriftTheta.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointYawRadians, limelightYawRadians, llResult.getStddevMt2()[5]);
+        estimatedDriftTheta = filterDriftTheta.getEstimatedDrift();
+        telemetry.addData("estimatedDriftTheta", estimatedDriftTheta);
+
+        lastLimelightReadNanoseconds = currentTimeNanoseconds;
+        return true;
+    }
+
+    private void move() {
+        if (gamepad1.a) {
+            double targetX = 0;
+            double targetY = 0;
+            double targetTheta = 135;
+            if (xPid == null) {
+                xPid = new VariablePeriodPIDController(1, 1, 1);
+                xPid.setSetpoint(targetX);
+                yPid = new VariablePeriodPIDController(1, 1, 1);
+                yPid.setSetpoint(targetY);
+                thetaPid = new VariablePeriodPIDController(1, 1, 1);
+                thetaPid.setSetpoint(targetTheta);
+                lastTime = runtime.nanoseconds();
             }
-            // Distances are in meters, rotations are in degrees. This is centered on the origin.
-            // Zero yaw points along the x axis (i.e., towards the audience). Positive yaw indicates
-            // counterclockwise rotation from the point of view of someone looking down on the field
-            // (i.e., same as the unit circle).
-            Pose3D botPose = llResult.getBotpose_MT2();
-            telemetry.addData("BotPose", botPose.toString());
-            telemetry.addData("Yaw", botPose.getOrientation().getYaw());
-            telemetry.addData("Pipeline index", llResult.getPipelineIndex());
-            telemetry.addData("IMU orientation", robotYawRelativeToStartInDegrees);
-            telemetry.addData("Elapsed time", runtime.time());
-            for (LLResultTypes.FiducialResult s : llResult.getFiducialResults()) {
-                telemetry.addData("Fiducial ID", s.getFiducialId());
-                if (s.getFiducialId() != goalAprilTagId) {
-                    continue;
-                }
-                telemetry.addData("Robot pose field space", s.getRobotPoseFieldSpace());
-                limelight.updateRobotOrientation(INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
-                for (List<Double> corner : s.getTargetCorners()) {
-                    StringBuilder line = new StringBuilder();
-                    for (Double d : corner) {
-                        if (line.length() > 0) {
-                            line.append(", ");
-                        }
-                        line.append(d);
-                    }
-                    telemetry.addLine(line.toString());
-                }
-                telemetry.addData("Camera pose target space", s.getCameraPoseTargetSpace());
-                telemetry.addData("Target pose camera space", s.getTargetPoseCameraSpace());
-            }
-            telemetry.addData("Target X", llResult.getTx());
-            telemetry.addData("Target Y", llResult.getTy());
-            double distance = (29.5 - 13.75) / Math.tan(Math.toRadians(llResult.getTy()));
-            telemetry.addData("Computed distance", distance);
-            telemetry.addData("Angle to target",
-                              llResult.getTx() + robotYawRelativeToStartInDegrees);
-            //telemetry.addData("Target XNC", llResult.getTxNC());
-            //telemetry.addData("Target Area", llResult.getTa());
-            //telemetry.addData("Latency", llResult.getStaleness()); // Latency of the result in
+            double currentX = pinpointXMeters - estimatedDriftX;
+            double currentY = pinpointYMeters - estimatedDriftY;
+            double currentTheta = pinpointYawRadians - estimatedDriftTheta;
 
-            if (gamepad1.a) {
-                double targetX = 0;
-                double targetY = 0;
-                double targetTheta = 135;
-                if (xPid == null) {
-                    xPid = new VariablePeriodPIDController(1, 1, 1);
-                    xPid.setSetpoint(targetX);
-                    yPid = new VariablePeriodPIDController(1, 1, 1);
-                    yPid.setSetpoint(targetY);
-                    thetaPid = new VariablePeriodPIDController(1, 1, 1);
-                    thetaPid.setSetpoint(targetTheta);
-                    lastTime = runtime.nanoseconds();
-                }
-                double deltaX = targetX - botPose.getPosition().x;
-                double deltaY = targetY - botPose.getPosition().y;
-                double deltaTheta = targetTheta - botPose.getOrientation().getYaw();
-                telemetry.addData("deltaX", deltaX);
-                telemetry.addData("deltaY", deltaY);
-                telemetry.addData("deltaTheta", deltaTheta);
-                double movementAngleRelativeToFieldInRadians = Math.atan2(deltaY, deltaX);
-                double movementAngleRelativeToFieldInDegrees = Math.toDegrees(movementAngleRelativeToFieldInRadians);
-                telemetry.addData("movementAngleRelativeToFieldInDegrees", movementAngleRelativeToFieldInDegrees);
-                double movementAngleRelativeToRobotInDegrees = movementAngleRelativeToFieldInDegrees - botPose.getOrientation().getYaw(AngleUnit.DEGREES);
-                telemetry.addData("movementAngleRelativeToRobotInDegrees", movementAngleRelativeToRobotInDegrees);
-                double movementDistanceMeters = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-                telemetry.addData("movementDistanceMeters", movementDistanceMeters);
+            double deltaX = targetX - currentX;
+            double deltaY = targetY - currentY;
+            double deltaTheta = targetTheta - currentTheta;
+            telemetry.addData("deltaX", deltaX);
+            telemetry.addData("deltaY", deltaY);
+            telemetry.addData("deltaTheta", deltaTheta);
+            double movementAngleRelativeToFieldInRadians = Math.atan2(deltaY, deltaX);
+            double movementAngleRelativeToFieldInDegrees = Math.toDegrees(movementAngleRelativeToFieldInRadians);
+            telemetry.addData("movementAngleRelativeToFieldInDegrees", movementAngleRelativeToFieldInDegrees);
+            double movementAngleRelativeToRobotInDegrees = movementAngleRelativeToFieldInDegrees - currentTheta;
+            telemetry.addData("movementAngleRelativeToRobotInDegrees", movementAngleRelativeToRobotInDegrees);
+            double movementDistanceMeters = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            telemetry.addData("movementDistanceMeters", movementDistanceMeters);
 
-                long now = runtime.nanoseconds();
-                double deltaTime = (now - lastTime) / 1_000_000_000.0;
-                lastTime = now;
+            long now = runtime.nanoseconds();
+            double deltaTime = (now - lastTime) / 1_000_000_000.0;
+            lastTime = now;
 
-                double xOutput = xPid.calculate(botPose.getPosition().x, deltaTime);
-                double yOutput = yPid.calculate(botPose.getPosition().y, deltaTime);
-                double thetaOutput = thetaPid.calculate(botPose.getOrientation().getYaw(), deltaTime);
-                telemetry.addData("xOutput", xOutput);
-                telemetry.addData("yOutput", yOutput);
-                telemetry.addData("thetaOutput", thetaOutput);
+            double xOutput = xPid.calculate(currentX, deltaTime);
+            double yOutput = yPid.calculate(currentY, deltaTime);
+            double thetaOutput = thetaPid.calculate(currentTheta, deltaTime);
+            telemetry.addData("xOutput", xOutput);
+            telemetry.addData("yOutput", yOutput);
+            telemetry.addData("thetaOutput", thetaOutput);
 
-                double forwardRelativeToBot = movementDistanceMeters * Math.cos(Math.toRadians(movementAngleRelativeToRobotInDegrees));
-                double strafeRelativeToBot = movementDistanceMeters * Math.sin(Math.toRadians(movementAngleRelativeToRobotInDegrees));
-                double turnRelativeToBot = deltaTheta / 20;
+            double forwardRelativeToBot = movementDistanceMeters * Math.cos(Math.toRadians(movementAngleRelativeToRobotInDegrees));
+            double strafeRelativeToBot = movementDistanceMeters * Math.sin(Math.toRadians(movementAngleRelativeToRobotInDegrees));
+            double turnRelativeToBot = deltaTheta / 20;
 
-            } else {
-                xPid = null;
-                yPid = null;
-                thetaPid = null;
-                mecanumDrive.moveRelativeToRobot(0, 0, 0);
-            }
         } else {
             xPid = null;
             yPid = null;
             thetaPid = null;
             mecanumDrive.moveRelativeToRobot(0, 0, 0);
         }
-        telemetry.addData("limelight result is valid", isValid);
     }
 
     /*
@@ -240,4 +253,5 @@ public class AutoMove extends OpMode {
         telemetry.addData("Status", "Stop requested");
         limelight.stop();
     }
+
 }
