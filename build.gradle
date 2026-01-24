@@ -11,7 +11,9 @@ buildscript {
     }
     dependencies {
         // Note for FTC Teams: Do not modify this yourself.
-        classpath 'com.android.tools.build:gradle:9.0.0'
+        // 8.13.2 is the latest version supported by Android Studio Otter 2 Feature Drop | 2025.2.2,
+        // which is what we have installed on the computers in F103.
+        classpath 'com.android.tools.build:gradle:8.13.2'
     }
 }
 
