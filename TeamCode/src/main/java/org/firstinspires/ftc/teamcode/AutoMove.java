@@ -1,6 +1,8 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.qualcomm.hardware.gobilda.GoBildaPinpointDriver;
 import com.qualcomm.hardware.limelightvision.LLResult;
+import com.qualcomm.hardware.limelightvision.LLResultTypes;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
@@ -9,6 +11,8 @@ import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
 import org.firstinspires.ftc.robotcore.external.navigation.YawPitchRollAngles;
 
@@ -48,6 +52,7 @@ public class AutoMove extends OpMode {
     VariablePeriodPIDController thetaPid;
     long lastTime;
     private IMU imu;
+    private GoBildaPinpointDriver pinpoint;
     private Limelight3A limelight;
 
     private Angle imuYaw;
@@ -79,7 +84,7 @@ public class AutoMove extends OpMode {
 
         initializeLimelight();
 
-        // initializePinpoint();
+        initializePinpoint();
 
         // Initialize the motors
         mecanumDrive = new MecanumDrive(hardwareMap, telemetry);
@@ -101,6 +106,17 @@ public class AutoMove extends OpMode {
                 imu.initialize(new IMU.Parameters(revHubOrientationOnRobot));
         imu.resetYaw();
         telemetry.addData("IMU initialized successfully", imuInitializationSucceeded);
+    }
+
+    private void initializePinpoint() {
+        pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, "pinpoint");
+        boolean pinpointInitializedSuccessfully = pinpoint.initialize();
+        pinpoint.setOffsets(3.125, 7.5, DistanceUnit.INCH);
+        pinpoint.setEncoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
+        pinpoint.setEncoderDirections(GoBildaPinpointDriver.EncoderDirection.FORWARD,
+                GoBildaPinpointDriver.EncoderDirection.FORWARD);
+        pinpoint.resetPosAndIMU();
+        telemetry.addLine("Pinpoint initialized successfully: " + pinpointInitializedSuccessfully);
     }
 
     private void initializeLimelight() {
@@ -133,9 +149,13 @@ public class AutoMove extends OpMode {
     @Override
     public void loop() {
         readImu();
-        // readPinpoint();
+        readPinpoint();
         // Must follow call to readImu() because it uses the yaw reported by the IMU.
         readLimelight();
+
+        telemetry.addData("Estimated x", pinpointXMeters - estimatedDriftX);
+        telemetry.addData("Estimated y", pinpointYMeters - estimatedDriftY);
+        telemetry.addData("Estimated theta", pinpointYawRadians - estimatedDriftTheta);
 
         move();
     }
@@ -148,12 +168,24 @@ public class AutoMove extends OpMode {
         telemetry.addData("Yaw reported by IMU", robotYawRelativeToStartInDegrees);
         telemetry.addData("IMU Yaw relative to field",
                 INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
-        telemetry.addData("Pitch reported by IMU",
-                robotYawPitchRollRelativeToStart.getPitch(AngleUnit.DEGREES));
-        telemetry.addData("Roll reported by IMU",
-                robotYawPitchRollRelativeToStart.getRoll(AngleUnit.DEGREES));
-        telemetry.addLine("initialRobotYawRelativeToFieldInDegrees " + INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES);
+        //telemetry.addData("Pitch reported by IMU",
+        //        robotYawPitchRollRelativeToStart.getPitch(AngleUnit.DEGREES));
+        //telemetry.addData("Roll reported by IMU",
+        //        robotYawPitchRollRelativeToStart.getRoll(AngleUnit.DEGREES));
+        //telemetry.addLine("initialRobotYawRelativeToFieldInDegrees " + INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES);
         telemetry.addLine("Setting Limelight robot orientation to " + INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
+    }
+
+    private void readPinpoint() {
+        pinpoint.update();
+        Pose2D pose = pinpoint.getPosition();
+        telemetry.addData("Pinpoint pose", pose);
+        pinpointXMeters = pose.getX(DistanceUnit.METER);
+        telemetry.addData("pinpointXMeters", pinpointXMeters);
+        pinpointYMeters = pose.getY(DistanceUnit.METER);
+        telemetry.addData("pinpointYMeters", pinpointYMeters);
+        pinpointYawRadians = pose.getHeading(AngleUnit.RADIANS);
+        telemetry.addData("pinpointYawRadians", pinpointYawRadians);
     }
 
     private boolean readLimelight() {
@@ -163,6 +195,16 @@ public class AutoMove extends OpMode {
         limelight.updateRobotOrientation(INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + imuYaw.degrees);
         LLResult llResult = limelight.getLatestResult();
         if (llResult == null || !llResult.isValid() || llResult.getPipelineIndex() != LIMELIGHT_PIPELINE_INDEX) {
+            return false;
+        }
+        boolean foundGoalTag = false;
+        for (LLResultTypes.FiducialResult fr : llResult.getFiducialResults()) {
+            if (fr.getFiducialId() == 20 || fr.getFiducialId() == 24) {
+                foundGoalTag = true;
+                break;
+            }
+        }
+        if (!foundGoalTag) {
             return false;
         }
 
@@ -175,7 +217,7 @@ public class AutoMove extends OpMode {
 
         double limelightXMeters = botPose.getPosition().x;
         filterDriftX.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointXMeters, limelightXMeters, llResult.getStddevMt2()[0]);
-        estimatedDriftX =  filterDriftX.getEstimatedDrift();
+        estimatedDriftX = filterDriftX.getEstimatedDrift();
         telemetry.addData("estimatedDriftX", estimatedDriftX);
         double limelightYMeters = botPose.getPosition().y;
         filterDriftY.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointYMeters, limelightYMeters, llResult.getStddevMt2()[1]);
