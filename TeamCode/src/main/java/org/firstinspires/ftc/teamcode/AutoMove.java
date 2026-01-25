@@ -44,7 +44,7 @@ public class AutoMove extends OpMode {
     // 126 degrees is pointing towards the red goal, perpendicular to the red
     // AprilTag (i.e., the orientation of a bot that's facing the red goal and
     // touching it).
-    private static final double INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES = 126;
+    private static final double INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES = 180;
 
     private static final int LIMELIGHT_PIPELINE_INDEX = 4;
 
@@ -133,10 +133,15 @@ public class AutoMove extends OpMode {
     private void initializePinpoint() {
         pinpoint = hardwareMap.get(GoBildaPinpointDriver.class, "pinpoint");
         boolean pinpointInitializedSuccessfully = pinpoint.initialize();
-        pinpoint.setOffsets(3.125, 7.5, DistanceUnit.INCH);
         pinpoint.setEncoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
+        // Moving the robot forward should increase the estimated X position, and moving it left
+        // should increase the estimated Y position
         pinpoint.setEncoderDirections(GoBildaPinpointDriver.EncoderDirection.FORWARD,
-                GoBildaPinpointDriver.EncoderDirection.FORWARD);
+                GoBildaPinpointDriver.EncoderDirection.REVERSED);
+        // For localization purposes, the center of the robot is the point where the diagonal
+        // connecting the centers of the left front and back right wheels crosses the diagonal
+        // connecting the centers of the right front and back left wheels.
+        pinpoint.setOffsets(3.75, -7.5, DistanceUnit.INCH);
         pinpoint.resetPosAndIMU();
         telemetry.addLine("Pinpoint initialized successfully: " + pinpointInitializedSuccessfully);
     }
@@ -187,21 +192,21 @@ public class AutoMove extends OpMode {
         YawPitchRollAngles robotYawPitchRollRelativeToStart = imu.getRobotYawPitchRollAngles();
         double robotYawRelativeToStartInDegrees =
                 robotYawPitchRollRelativeToStart.getYaw(AngleUnit.DEGREES);
-        telemetry.addData("Yaw reported by IMU", robotYawRelativeToStartInDegrees);
-        telemetry.addData("IMU Yaw relative to field",
-                INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
+        //telemetry.addData("Yaw reported by IMU", robotYawRelativeToStartInDegrees);
+        //telemetry.addData("IMU Yaw relative to field",
+                //INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
         //telemetry.addData("Pitch reported by IMU",
         //        robotYawPitchRollRelativeToStart.getPitch(AngleUnit.DEGREES));
         //telemetry.addData("Roll reported by IMU",
         //        robotYawPitchRollRelativeToStart.getRoll(AngleUnit.DEGREES));
         //telemetry.addLine("initialRobotYawRelativeToFieldInDegrees " + INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES);
-        telemetry.addLine("Setting Limelight robot orientation to " + INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
+        //telemetry.addLine("Setting Limelight robot orientation to " + INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + robotYawRelativeToStartInDegrees);
     }
 
     private void readPinpoint() {
         pinpoint.update();
         Pose2D pose = pinpoint.getPosition();
-        telemetry.addData("Pinpoint pose", pose);
+        //telemetry.addData("Pinpoint pose", pose);
         pinpointXMeters = pose.getX(DistanceUnit.METER);
         telemetry.addData("pinpointXMeters", pinpointXMeters);
         pinpointYMeters = pose.getY(DistanceUnit.METER);
@@ -217,6 +222,9 @@ public class AutoMove extends OpMode {
         limelight.updateRobotOrientation(INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + imuYaw.degrees);
         LLResult llResult = limelight.getLatestResult();
         if (llResult == null || !llResult.isValid() || llResult.getPipelineIndex() != LIMELIGHT_PIPELINE_INDEX) {
+            telemetry.addData("estimatedDriftX", "");
+            telemetry.addData("estimatedDriftY", "");
+            telemetry.addData("estimatedDriftTheta", "");
             return false;
         }
         boolean foundGoalTag = false;
@@ -227,6 +235,9 @@ public class AutoMove extends OpMode {
             }
         }
         if (!foundGoalTag) {
+            telemetry.addData("estimatedDriftX", "");
+            telemetry.addData("estimatedDriftY", "");
+            telemetry.addData("estimatedDriftTheta", "");
             return false;
         }
 
@@ -235,17 +246,23 @@ public class AutoMove extends OpMode {
         // counterclockwise rotation from the point of view of someone looking down on the field
         // (i.e., same as the unit circle).
         Pose3D botPose = llResult.getBotpose_MT2();
-        telemetry.addData("BotPose", botPose.toString());
+        //telemetry.addData("BotPose", botPose.toString());
 
         double limelightXMeters = botPose.getPosition().x;
+        telemetry.addData("limelightXMeters", limelightXMeters);
+        telemetry.addData("limelightXStdDev", llResult.getStddevMt2()[0]);
         filterDriftX.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointXMeters, limelightXMeters, llResult.getStddevMt2()[0]);
         estimatedDriftX = filterDriftX.getEstimatedDrift();
         telemetry.addData("estimatedDriftX", estimatedDriftX);
         double limelightYMeters = botPose.getPosition().y;
+        telemetry.addData("limelightYMeters", limelightYMeters);
+        telemetry.addData("limelightYStdDev", llResult.getStddevMt2()[1]);
         filterDriftY.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointYMeters, limelightYMeters, llResult.getStddevMt2()[1]);
         estimatedDriftY = filterDriftY.getEstimatedDrift();
         telemetry.addData("estimatedDriftY", estimatedDriftY);
         double limelightYawRadians = botPose.getOrientation().getYaw(AngleUnit.RADIANS);
+        telemetry.addData("limelightYawRadians", limelightYawRadians);
+        telemetry.addData("limelightYawStdDev", llResult.getStddevMt2()[5]);
         filterDriftTheta.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointYawRadians, limelightYawRadians, llResult.getStddevMt2()[5]);
         estimatedDriftTheta = filterDriftTheta.getEstimatedDrift();
         telemetry.addData("estimatedDriftTheta", estimatedDriftTheta);
