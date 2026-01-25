@@ -7,6 +7,9 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
@@ -69,6 +72,11 @@ public class AutoMove extends OpMode {
 
     private long lastLimelightReadNanoseconds;
 
+    private DcMotorEx leftFront = null;
+    private DcMotorEx rightFront = null;
+    private DcMotorEx leftBack = null;
+    private DcMotorEx rightBack = null;
+
     public AutoMove() {
         goalAprilTagId = 24;
     }
@@ -79,6 +87,20 @@ public class AutoMove extends OpMode {
     @Override
     public void init() {
         telemetry.addData("Status", "Initializing");
+
+        leftFront = hardwareMap.get(DcMotorEx.class, "leftFront");
+        leftFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+
+        rightFront = hardwareMap.get(DcMotorEx.class, "rightFront");
+        rightFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        rightFront.setDirection(DcMotorSimple.Direction.REVERSE);
+
+        leftBack = hardwareMap.get(DcMotorEx.class, "leftBack");
+        leftBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+
+        rightBack = hardwareMap.get(DcMotorEx.class, "rightBack");
+        rightBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
+        rightBack.setDirection(DcMotorSimple.Direction.REVERSE);
 
         initializeImu();
 
