@@ -20,11 +20,22 @@ public class DualLogger {
         this.tag = tag;
     }
 
-    public Telemetry.Item addData(java.lang.String caption,
+    public void addData(java.lang.String caption,
+                        java.lang.Object value) {
+        telemetry.addData(caption, value);
+        RobotLog.vv(tag, caption + ": " + value);
+    }
+
+    public void addData(java.lang.String caption,
                            java.lang.String format,
                            java.lang.Object... args) {
-        Telemetry.Item item = telemetry.addData(caption, format, args);
+        telemetry.addData(caption, format, args);
         RobotLog.vv(tag, caption + ": " + String.format(format, args));
-        return item;
     }
+
+    public void addLine(java.lang.String lineCaption) {
+        telemetry.addLine(lineCaption);
+        RobotLog.vv(tag, lineCaption);
+    }
+
 }
