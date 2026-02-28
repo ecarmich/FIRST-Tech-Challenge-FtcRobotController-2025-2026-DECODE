@@ -15,6 +15,8 @@ package org.firstinspires.ftc.teamcode;
  */
 public class PinpointDriftKalmanFilter {
 
+    private final DualLogger dualLogger;
+
     // Process noise (Q). Higher values mean the drift changes more rapidly over time. We model the
     // drift's change over time as a random walk. This is our estimate of its variance.
     private final double driftVariance;
@@ -31,7 +33,8 @@ public class PinpointDriftKalmanFilter {
     // filter math requires a non-zero value.
     private double uncertainty; // Uncertainty (P)
 
-    public PinpointDriftKalmanFilter(double initialUncertainty, double driftVariance) {
+    public PinpointDriftKalmanFilter(DualLogger dualLogger, double initialUncertainty, double driftVariance) {
+        this.dualLogger = dualLogger;
         this.uncertainty = initialUncertainty;
         this.driftVariance = driftVariance;
     }
@@ -48,29 +51,44 @@ public class PinpointDriftKalmanFilter {
      * @param deltaTime            Time since the last update.
      * @param pinpointMeasurement  The raw value from the Pinpoint sensor.
      * @param limelightMeasurement The "Ground Truth" value from the Limelight.
-     * @param limelightVariance    The "Measurement Noise" (R). This is reported by the Limelight.
+     * @param limelightStandardDeviation The square root of the "Measurement Noise" (R). This is reported by the Limelight.
      *                             Higher values mean you should trust the Limelight less.
      *                             </p>
      */
-    public void addMeasurements(double deltaTime, double pinpointMeasurement, double limelightMeasurement, double limelightVariance) {
+    public void addMeasurements(double deltaTime, double pinpointMeasurement, double limelightMeasurement, double limelightStandardDeviation) {
+        dualLogger.log("limelightStdDeviation: %f", limelightStandardDeviation);
+        double limelightVariance = limelightStandardDeviation * limelightStandardDeviation;
+        dualLogger.log("deltaTime", "%f", deltaTime);
+        dualLogger.log("pinpointMeasurement", "%f", pinpointMeasurement);
+        dualLogger.log("limelightMeasurement", "%f", limelightMeasurement);
+        dualLogger.log("limelightVariance", "%f", limelightVariance);
+        dualLogger.log("uncertainty", "%f", uncertainty);
+        dualLogger.log("estimatedDrift before", "%f", estimatedDrift);
+
         // -- Prediction step --
 
         // As time passes, we naturally become less certain about our drift estimate.
         uncertainty += driftVariance * deltaTime;
+        dualLogger.log("uncertainty after adjusting for time", "%f", uncertainty);
 
         // -- Measurement update step --
 
         double observedDrift = pinpointMeasurement - limelightMeasurement;
+        dualLogger.log("observedDrift", "%f", observedDrift);
         double innovation = observedDrift - estimatedDrift;
+        dualLogger.log("innovation", "%f", innovation);
 
         // Kalman Gain: How much do we trust this new data vs our current estimate?
         double kalmanGain = uncertainty / (uncertainty + limelightVariance);
+        dualLogger.log("kalmanGain", "%f", kalmanGain);
 
         // Adjust the estimate based on how much we trust the new observation
         estimatedDrift += kalmanGain * innovation;
 
         // Update the error covariance (uncertainty decreases because we have new info)
         uncertainty = (1 - kalmanGain) * uncertainty;
+        dualLogger.log("uncertainty after", "%f", uncertainty);
+        dualLogger.log("estimatedDrift after", "%f", estimatedDrift);
     }
 
     public double getEstimatedDrift() {
