@@ -21,6 +21,12 @@ public class DualLogger {
     }
 
     public void log(java.lang.String format, java.lang.Object... args) {
+        // Only the first nine entries display on the driver station screen
+        //telemetry.log().add(format, args);
+        RobotLog.vv(tag, format, args);
+    }
+
+    public void log2(java.lang.String format, java.lang.Object... args) {
         telemetry.log().add(format, args);
         RobotLog.vv(tag, format, args);
     }

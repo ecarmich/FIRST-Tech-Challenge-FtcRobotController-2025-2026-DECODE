@@ -58,37 +58,37 @@ public class PinpointDriftKalmanFilter {
     public void addMeasurements(double deltaTime, double pinpointMeasurement, double limelightMeasurement, double limelightStandardDeviation) {
         dualLogger.log("limelightStdDeviation: %f", limelightStandardDeviation);
         double limelightVariance = limelightStandardDeviation * limelightStandardDeviation;
-        dualLogger.log("deltaTime", "%f", deltaTime);
-        dualLogger.log("pinpointMeasurement", "%f", pinpointMeasurement);
-        dualLogger.log("limelightMeasurement", "%f", limelightMeasurement);
-        dualLogger.log("limelightVariance", "%f", limelightVariance);
-        dualLogger.log("uncertainty", "%f", uncertainty);
-        dualLogger.log("estimatedDrift before", "%f", estimatedDrift);
+        dualLogger.log("deltaTime: %f", deltaTime);
+        dualLogger.log("pinpointMeasurement: %f", pinpointMeasurement);
+        dualLogger.log("limelightMeasurement: %f", limelightMeasurement);
+        dualLogger.log("limelightVariance: %f", limelightVariance);
+        dualLogger.log("uncertainty: %f", uncertainty);
+        dualLogger.log("estimatedDrift before: %f", estimatedDrift);
 
         // -- Prediction step --
 
         // As time passes, we naturally become less certain about our drift estimate.
         uncertainty += driftVariance * deltaTime;
-        dualLogger.log("uncertainty after adjusting for time", "%f", uncertainty);
+        dualLogger.log("uncertainty after adjusting for time: %f", uncertainty);
 
         // -- Measurement update step --
 
         double observedDrift = pinpointMeasurement - limelightMeasurement;
-        dualLogger.log("observedDrift", "%f", observedDrift);
+        dualLogger.log("observedDrift: %f", observedDrift);
         double innovation = observedDrift - estimatedDrift;
-        dualLogger.log("innovation", "%f", innovation);
+        dualLogger.log("innovation: %f", innovation);
 
         // Kalman Gain: How much do we trust this new data vs our current estimate?
         double kalmanGain = uncertainty / (uncertainty + limelightVariance);
-        dualLogger.log("kalmanGain", "%f", kalmanGain);
+        dualLogger.log("kalmanGain: %f", kalmanGain);
 
         // Adjust the estimate based on how much we trust the new observation
         estimatedDrift += kalmanGain * innovation;
 
         // Update the error covariance (uncertainty decreases because we have new info)
         uncertainty = (1 - kalmanGain) * uncertainty;
-        dualLogger.log("uncertainty after", "%f", uncertainty);
-        dualLogger.log("estimatedDrift after", "%f", estimatedDrift);
+        dualLogger.log("uncertainty after: %f", uncertainty);
+        dualLogger.log("estimatedDrift after: %f", estimatedDrift);
     }
 
     public double getEstimatedDrift() {

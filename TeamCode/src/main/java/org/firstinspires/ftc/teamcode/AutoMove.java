@@ -13,10 +13,14 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
+import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @TeleOp
 public class AutoMove extends OpMode {
@@ -76,12 +80,16 @@ public class AutoMove extends OpMode {
     private DcMotorEx leftBack = null;
     private DcMotorEx rightBack = null;
 
+    Telemetry.Item item = null;
+
+    List<double[]> allLimelightResults = new ArrayList<>();
     /*
      * Code to run ONCE when the driver hits INIT
      */
     @Override
     public void init() {
         dualLogger.log("Initializing");
+        item = dualLogger.addItem("item", "test3141");
 
         leftFront = hardwareMap.get(DcMotorEx.class, "leftFront");
         leftFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
@@ -149,6 +157,7 @@ public class AutoMove extends OpMode {
      */
     @Override
     public void init_loop() {
+        readSensors();
     }
 
     /*
@@ -168,6 +177,14 @@ public class AutoMove extends OpMode {
      */
     @Override
     public void loop() {
+        item = telemetry.addData("item3141", "test");
+        readSensors();
+        item.setValue("foo " + System.currentTimeMillis());
+
+        //move();
+    }
+
+    private void readSensors() {
         dualLogger.addData("System.currentTimeMillis()", System.currentTimeMillis());
         readImu();
         readPinpoint();
@@ -177,8 +194,6 @@ public class AutoMove extends OpMode {
         dualLogger.addData("Estimated x (meters)", pinpointXMeters - estimatedDriftXMeters);
         dualLogger.addData("Estimated y (meters)", pinpointYMeters - estimatedDriftYMeters);
         dualLogger.addData("Estimated theta (radians)", pinpointYawRadians - estimatedDriftThetaRadians);
-
-        //move();
     }
 
     private void readImu() {
@@ -205,18 +220,30 @@ public class AutoMove extends OpMode {
         Pose2D pose = pinpoint.getPosition();
         //dualLogger.addData("Pinpoint pose", pose);
         pinpointXMeters = pose.getX(DistanceUnit.METER);
-        dualLogger.log("pinpointXMeters", pinpointXMeters);
+        dualLogger.log("pinpointXMeters: %f", pinpointXMeters);
         pinpointYMeters = pose.getY(DistanceUnit.METER);
-        dualLogger.log("pinpointYMeters", pinpointYMeters);
+        dualLogger.log("pinpointYMeters: %f", pinpointYMeters);
         pinpointYawRadians = pose.getHeading(AngleUnit.RADIANS);
-        dualLogger.log("pinpointYawRadians", pinpointYawRadians);
+        dualLogger.log("pinpointYawRadians: %f", pinpointYawRadians);
     }
 
     private void readLimelight() {
+        /*
+        for (int i=0; i<50; i++) {
+            dualLogger.addData("Item " + i, i);
+            dualLogger.addData("Item " + i, i+1);
+        }
+        for (int i=50; i<100; i++) {
+            dualLogger.log2("Item " + i, i);
+        }
+        */
         long currentTimeNanoseconds = runtime.nanoseconds();
         long timeSinceLastLimelightReadNanoseconds = currentTimeNanoseconds - lastLimelightReadNanoseconds;
 
-        limelight.updateRobotOrientation(INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + Math.toDegrees(pinpointYawRadians));
+        limelight.updateRobotOrientation(139);
+        //limelight.updateRobotOrientation(INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES);
+
+        //limelight.updateRobotOrientation(INITIAL_ROBOT_YAW_RELATIVE_TO_FIELD_IN_DEGREES + Math.toDegrees(pinpointYawRadians));
         LLResult llResult = limelight.getLatestResult();
         if (llResult == null) {
             dualLogger.log("llResult is null");
@@ -242,16 +269,16 @@ public class AutoMove extends OpMode {
         }
 
         // System time in milliseconds?
-        dualLogger.log("llResult.getTimestamp()", llResult.getTimestamp());
+        dualLogger.log("llResult.getTimestamp(): %f", llResult.getTimestamp());
         // Age of the result in milliseconds, according to https://docs.limelightvision.io/docs/docs-limelight/apis/ftc-programming#8-is-the-data-fresh
         // I've verified that if you wait 500 milliseconds and then re-query this, it grows by 500
-        dualLogger.log("llResult.getStaleness()", llResult.getStaleness());
+        dualLogger.log("llResult.getStaleness(): %d", llResult.getStaleness());
         // This always returns 37.619998931884766
-        dualLogger.log("llResult.getCaptureLatency()", llResult.getCaptureLatency());
-        dualLogger.log("llResult.getParseLatency()", llResult.getParseLatency());
-        dualLogger.log("llResult.getTargetingLatency()", llResult.getTargetingLatency());
+        dualLogger.log("llResult.getCaptureLatency(): %f", llResult.getCaptureLatency());
+        dualLogger.log("llResult.getParseLatency(): %f", llResult.getParseLatency());
+        dualLogger.log("llResult.getTargetingLatency(): %f", llResult.getTargetingLatency());
         // Epoch time in nanoseconds
-        dualLogger.log("llResult.getControlHubTimeStampNanos()", llResult.getControlHubTimeStampNanos());
+        dualLogger.log("llResult.getControlHubTimeStampNanos(): %d", llResult.getControlHubTimeStampNanos());
 /*
         long startTime = System.currentTimeMillis();
         while (System.currentTimeMillis() - startTime < 500) {
@@ -270,32 +297,42 @@ public class AutoMove extends OpMode {
         // Zero yaw points along the x axis (i.e., towards the audience). Positive yaw indicates
         // counterclockwise rotation from the point of view of someone looking down on the field
         // (i.e., same as the unit circle).
-        dualLogger.log("getBotpose()", llResult.getBotpose().toString());
-
+        dualLogger.log("getBotpose(): %s", llResult.getBotpose().toString());
+        double xMeters = llResult.getBotpose().getPosition().x;
+        double yMeters = llResult.getBotpose().getPosition().y;
+        double yawDegrees = llResult.getBotpose().getOrientation().getYaw(AngleUnit.DEGREES);
+        allLimelightResults.add(new double[]{xMeters, yMeters, yawDegrees});
+        StringBuilder results = new StringBuilder();
+        for (double[] r : allLimelightResults) {
+            results.append(String.format(", (%f, %f, %f)", r[0], r[1], r[2]));
+        }
+        dualLogger.log("All limelight results: %s", results.toString());
         Pose3D botPose = llResult.getBotpose_MT2();
-        dualLogger.log("getBotpose_MT2()", botPose.toString());
+        dualLogger.log("getBotpose_MT2() before: %s", botPose.toString());
+        //llResult.getBotpose_MT2();
+        dualLogger.log("getBotpose_MT2() after: %s", botPose.toString());
 
         // Update estimate of X coordinate
         double limelightXMeters = botPose.getPosition().x;
         filterDriftX.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointXMeters, limelightXMeters, llResult.getStddevMt2()[0]);
         estimatedDriftXMeters = filterDriftX.getEstimatedDrift();
-        dualLogger.log("estimatedDriftXMeters", estimatedDriftXMeters);
+        dualLogger.log("estimatedDriftXMeters: %f", estimatedDriftXMeters);
 
         // Update estimate of Y coordinate
         double limelightYMeters = botPose.getPosition().y;
-        dualLogger.log("limelightYMeters", limelightYMeters);
-        dualLogger.log("limelightYStdDev", llResult.getStddevMt2()[1]);
+        dualLogger.log("limelightYMeters: %f", limelightYMeters);
+        dualLogger.log("limelightYStdDev: %f", llResult.getStddevMt2()[1]);
         filterDriftY.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointYMeters, limelightYMeters, llResult.getStddevMt2()[1]);
         estimatedDriftYMeters = filterDriftY.getEstimatedDrift();
-        dualLogger.log("estimatedDriftYMeters", estimatedDriftYMeters);
+        dualLogger.log("estimatedDriftYMeters: %f", estimatedDriftYMeters);
 
         // Update estimate of yaw
         double limelightYawRadians = botPose.getOrientation().getYaw(AngleUnit.RADIANS);
-        dualLogger.log("limelightYawRadians", limelightYawRadians);
-        dualLogger.log("limelightYawStdDev", llResult.getStddevMt2()[5]);
+        dualLogger.log("limelightYawRadians: %f", limelightYawRadians);
+        dualLogger.log("limelightYawStdDev: %f", llResult.getStddevMt2()[5]);
         filterDriftTheta.addMeasurements(timeSinceLastLimelightReadNanoseconds, pinpointYawRadians, limelightYawRadians, llResult.getStddevMt2()[5]);
         estimatedDriftThetaRadians = filterDriftTheta.getEstimatedDrift();
-        dualLogger.log("estimatedDriftThetaRadians", estimatedDriftThetaRadians);
+        dualLogger.log("estimatedDriftThetaRadians: %f", estimatedDriftThetaRadians);
 
         lastLimelightReadNanoseconds = currentTimeNanoseconds;
     }
